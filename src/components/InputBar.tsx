@@ -258,6 +258,7 @@ function ButtonTooltip({ visible, text }: { visible: boolean; text: ReactNode })
 
 /** API 支持的最大参考图数量 */
 const API_MAX_IMAGES = 16
+const MISSING_API_KEY_MESSAGE = '没有获取到 API 密钥，请先到 API 密钥中创建一个生图的密钥'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
@@ -279,7 +280,6 @@ export default function InputBar() {
   const setParams = useStore((s) => s.setParams)
   const settings = useStore((s) => s.settings)
   const reusedTaskApiProfileId = useStore((s) => s.reusedTaskApiProfileId)
-  const setShowSettings = useStore((s) => s.setShowSettings)
   const setLightboxImageId = useStore((s) => s.setLightboxImageId)
   const showToast = useStore((s) => s.showToast)
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
@@ -463,6 +463,13 @@ export default function InputBar() {
   ), [activeProfile.id, currentActiveProfile.id, settings])
   const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
+  const handleSubmitClick = () => {
+    if (hasSubmitApiConfig) {
+      void submitTask()
+      return
+    }
+    showToast(MISSING_API_KEY_MESSAGE, 'error')
+  }
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const moderationDisabled = activeProfile.apiMode === 'responses' || isFalProvider
@@ -1867,16 +1874,16 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text="尚未完成 API 配置，请在右上角设置中进行" />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={MISSING_API_KEY_MESSAGE} />
                   <button
-                    onClick={() => hasSubmitApiConfig ? submitTask() : setShowSettings(true)}
+                    onClick={handleSubmitClick}
                     disabled={hasSubmitApiConfig ? !canSubmit : false}
                     className={`p-2.5 rounded-xl transition-all shadow-sm hover:shadow ${
                       !hasSubmitApiConfig
                         ? 'bg-gray-300 dark:bg-white/[0.06] text-white cursor-pointer'
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : '请先配置 API'}
+                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : MISSING_API_KEY_MESSAGE}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -1921,9 +1928,9 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text="尚未完成 API 配置，请在右上角设置中进行" />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={MISSING_API_KEY_MESSAGE} />
                   <button
-                    onClick={() => hasSubmitApiConfig ? submitTask() : setShowSettings(true)}
+                    onClick={handleSubmitClick}
                     disabled={hasSubmitApiConfig ? !canSubmit : false}
                     className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
                       !hasSubmitApiConfig

@@ -13,6 +13,7 @@ import {
   DEFAULT_FAL_MODEL,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_OPENAI_PROFILE_ID,
+  DEFAULT_OPENAI_PROFILE_NAME,
   DEFAULT_RESPONSES_MODEL,
   DEFAULT_SETTINGS,
   findEquivalentApiProfile,
@@ -622,7 +623,7 @@ export default function SettingsModal() {
         ...profile,
         name:
           profile.name.trim() ||
-          (profile.id === DEFAULT_OPENAI_PROFILE_ID ? "默认" : "新配置"),
+          (profile.id === DEFAULT_OPENAI_PROFILE_ID ? DEFAULT_OPENAI_PROFILE_NAME : "新配置"),
         baseUrl: normalizedBaseUrl,
         model: profile.model.trim() || defaultModel,
         timeout: Number(profile.timeout) || DEFAULT_SETTINGS.timeout,

@@ -4,6 +4,7 @@ import {
   DEFAULT_FAL_MODEL,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_OPENAI_PROFILE_ID,
+  DEFAULT_OPENAI_PROFILE_NAME,
   DEFAULT_SETTINGS,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
@@ -31,6 +32,7 @@ describe('mergeImportedSettings', () => {
     expect(merged.activeProfileId).toBe(DEFAULT_OPENAI_PROFILE_ID)
     expect(merged.profiles[0]).toMatchObject({
       id: DEFAULT_OPENAI_PROFILE_ID,
+      name: DEFAULT_OPENAI_PROFILE_NAME,
       provider: 'openai',
       baseUrl: 'https://api.example.com/v1',
       apiKey: 'imported-key',

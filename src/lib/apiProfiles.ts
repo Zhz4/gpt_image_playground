@@ -22,6 +22,7 @@ export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
+export const DEFAULT_OPENAI_PROFILE_NAME = 'sub2api'
 export const DEFAULT_API_TIMEOUT = 600
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal'])
@@ -259,7 +260,7 @@ export function normalizeCustomProviderDefinitions(input: unknown): CustomProvid
 export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
   return {
     id: DEFAULT_OPENAI_PROFILE_ID,
-    name: '默认',
+    name: DEFAULT_OPENAI_PROFILE_NAME,
     provider: 'openai',
     baseUrl: DEFAULT_BASE_URL,
     apiKey: '',
@@ -391,7 +392,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
   return {
     ...defaults,
     id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
-    name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
+    name: record.id === DEFAULT_OPENAI_PROFILE_ID && record.name === '默认' ? DEFAULT_OPENAI_PROFILE_NAME : typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
     provider,
     baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL : baseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
@@ -562,6 +563,19 @@ export function validateApiProfile(profile: ApiProfile): string | null {
 
 function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
   return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
+    profile.name === DEFAULT_OPENAI_PROFILE_NAME &&
+    profile.provider === 'openai' &&
+    profile.baseUrl === DEFAULT_BASE_URL &&
+    profile.apiKey === '' &&
+    profile.model === DEFAULT_IMAGES_MODEL &&
+    profile.timeout === DEFAULT_API_TIMEOUT &&
+    profile.apiMode === 'images' &&
+    profile.codexCli === false &&
+    profile.apiProxy === DEFAULT_OPENAI_API_PROXY
+}
+
+function isLegacyDefaultOpenAIProfile(profile: ApiProfile): boolean {
+  return profile.id === DEFAULT_OPENAI_PROFILE_ID &&
     profile.name === '默认' &&
     profile.provider === 'openai' &&
     profile.baseUrl === DEFAULT_BASE_URL &&
@@ -577,7 +591,7 @@ function hasOnlyDefaultProfiles(settings: AppSettings): boolean {
   return settings.customProviders.length === 0 &&
     settings.profiles.length === 1 &&
     settings.activeProfileId === DEFAULT_OPENAI_PROFILE_ID &&
-    isDefaultOpenAIProfile(settings.profiles[0])
+    (isDefaultOpenAIProfile(settings.profiles[0]) || isLegacyDefaultOpenAIProfile(settings.profiles[0]))
 }
 
 function createImportedProfileId(provider: ApiProvider, usedIds: Set<string>): string {

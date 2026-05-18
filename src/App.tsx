@@ -31,6 +31,8 @@ import ImageContextMenu from './components/ImageContextMenu'
 import SupportPromptModal from './components/SupportPromptModal'
 import Sub2ApiGroupPicker from './components/Sub2ApiGroupPicker'
 
+const MISSING_SUB2API_IMAGE_KEY_MESSAGE = '没有获取到 API 密钥，请先到 API 密钥中创建一个生图的密钥'
+
 export default function App() {
   const setSettings = useStore((s) => s.setSettings)
   const showToast = useStore((s) => s.showToast)
@@ -84,8 +86,7 @@ export default function App() {
           return
         }
         if (result.status === 'missing-key') {
-          const name = result.group?.name ? `「${result.group.name}」` : ''
-          showToast(`请先在 Sub2API 的 API 密钥页面为${name}生图分组创建密钥`, 'error')
+          showToast(MISSING_SUB2API_IMAGE_KEY_MESSAGE, 'error')
         }
       })
       .catch(() => {
@@ -104,8 +105,7 @@ export default function App() {
       return
     }
 
-    const name = option.group.name ? `「${option.group.name}」` : ''
-    showToast(`请先在 Sub2API 的 API 密钥页面为${name}生图分组创建密钥`, 'error')
+    showToast(MISSING_SUB2API_IMAGE_KEY_MESSAGE, 'error')
   }
 
   useEffect(() => {

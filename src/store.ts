@@ -58,6 +58,7 @@ const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const OPENAI_INTERRUPTED_ERROR = '请求中断'
+const MISSING_API_KEY_MESSAGE = '没有获取到 API 密钥，请先到 API 密钥中创建一个生图的密钥'
 
 function createOpenAITimeoutError(timeoutSeconds: number) {
   return `请求超时：超过 ${timeoutSeconds} 秒仍未完成，请稍后重试或提高超时时间。`
@@ -1121,9 +1122,9 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
   }
 
-  if (validateApiProfile(activeProfile)) {
-    showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
-    useStore.getState().setShowSettings(true)
+  const validationError = validateApiProfile(activeProfile)
+  if (validationError) {
+    showToast(validationError === '缺少 API Key' ? MISSING_API_KEY_MESSAGE : `请先完善请求 API 配置：${validationError}`, 'error')
     return
   }
 
