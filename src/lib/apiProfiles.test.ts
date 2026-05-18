@@ -529,6 +529,31 @@ describe('custom providers', () => {
     expect(profile.model).toBe(DEFAULT_IMAGES_MODEL)
   })
 
+  it('migrates the legacy built-in OpenAI default URL', () => {
+    const settings = normalizeSettings({
+      profiles: [
+        createDefaultOpenAIProfile({
+          baseUrl: 'https://api.openai.com/v1',
+        }),
+      ],
+    })
+
+    expect(settings.profiles[0].baseUrl).toBe('https://api.smooth.click')
+    expect(settings.baseUrl).toBe('https://api.smooth.click')
+  })
+
+  it('keeps custom OpenAI-compatible URLs while migrating settings', () => {
+    const settings = normalizeSettings({
+      profiles: [
+        createDefaultOpenAIProfile({
+          baseUrl: 'https://api.example.com/v1',
+        }),
+      ],
+    })
+
+    expect(settings.profiles[0].baseUrl).toBe('https://api.example.com/v1')
+  })
+
   it('restores OpenAI-compatible URL after switching through fal.ai', () => {
     const openaiProfile = createDefaultOpenAIProfile({
       baseUrl: 'https://api.compat.example.com/v1',
