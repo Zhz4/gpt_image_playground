@@ -60,6 +60,15 @@ const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const OPENAI_INTERRUPTED_ERROR = '请求中断'
 const MISSING_API_KEY_MESSAGE = '没有获取到 API 密钥，请先到 API 密钥中创建一个生图的密钥'
 
+type PersistedSettings = Pick<
+  AppSettings,
+  | 'clearInputAfterSubmit'
+  | 'persistInputOnRestart'
+  | 'reuseTaskApiProfileTemporarily'
+  | 'alwaysShowRetryButton'
+  | 'enterSubmit'
+>
+
 function createOpenAITimeoutError(timeoutSeconds: number) {
   return `请求超时：超过 ${timeoutSeconds} 秒仍未完成，请稍后重试或提高超时时间。`
 }
@@ -307,8 +316,23 @@ function maybeOpenSupportPrompt(previousTasks: TaskRecord[], nextTasks: TaskReco
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function getPersistedSettings(settings: Partial<AppSettings> | unknown): PersistedSettings {
+  const normalized = normalizeSettings(settings)
+  return {
+    clearInputAfterSubmit: normalized.clearInputAfterSubmit,
+    persistInputOnRestart: normalized.persistInputOnRestart,
+    reuseTaskApiProfileTemporarily: normalized.reuseTaskApiProfileTemporarily,
+    alwaysShowRetryButton: normalized.alwaysShowRetryButton,
+    enterSubmit: normalized.enterSubmit,
+  }
+}
+
 export function getPersistedState(state: AppState) {
-  const settings = normalizeSettings(state.settings)
+  const settings = getPersistedSettings(state.settings)
   return {
     settings,
     params: state.params,
@@ -318,22 +342,38 @@ export function getPersistedState(state: AppState) {
           inputImages: state.inputImages.map((img) => ({ id: img.id, dataUrl: '' })),
         }
       : {}),
-    dismissedCodexCliPrompts: state.dismissedCodexCliPrompts,
     supportPromptDismissed: state.supportPromptDismissed,
     supportPromptOpen: state.supportPromptOpen,
     supportPromptSkippedForImportedData: state.supportPromptSkippedForImportedData,
   }
 }
 
-function mergePersistedState(persistedState: unknown, currentState: AppState): AppState {
+function sanitizePersistedState(persistedState: unknown) {
+  if (!isRecord(persistedState)) return {}
+
+  return {
+    settings: getPersistedSettings(persistedState.settings),
+    ...(isRecord(persistedState.params) ? { params: persistedState.params } : {}),
+    ...(typeof persistedState.prompt === 'string' ? { prompt: persistedState.prompt } : {}),
+    ...(Array.isArray(persistedState.inputImages) ? { inputImages: persistedState.inputImages } : {}),
+    supportPromptDismissed: Boolean(persistedState.supportPromptDismissed),
+    supportPromptOpen: Boolean(persistedState.supportPromptOpen),
+    supportPromptSkippedForImportedData: Boolean(persistedState.supportPromptSkippedForImportedData),
+  }
+}
+
+export function mergePersistedState(persistedState: unknown, currentState: AppState): AppState {
   if (!persistedState || typeof persistedState !== 'object') return currentState
 
-  const persisted = persistedState as Partial<AppState>
-  const settings = normalizeSettings(persisted.settings ?? currentState.settings)
+  const persisted = sanitizePersistedState(persistedState) as Partial<AppState>
+  const settings = normalizeSettings({
+    ...currentState.settings,
+    ...getPersistedSettings(persisted.settings),
+  })
   return {
     ...currentState,
-    ...persisted,
     settings,
+    params: persisted.params ? { ...currentState.params, ...persisted.params } : currentState.params,
     supportPromptDismissed: Boolean(persisted.supportPromptDismissed),
     supportPromptOpen: Boolean(persisted.supportPromptOpen),
     supportPromptSkippedForImportedData: Boolean(persisted.supportPromptSkippedForImportedData),
@@ -638,7 +678,9 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'gpt-image-playground',
+      version: 1,
       partialize: getPersistedState,
+      migrate: sanitizePersistedState,
       merge: mergePersistedState,
     },
   ),

@@ -51,7 +51,7 @@ vi.mock('./lib/db', () => {
   }
 })
 import { clearImages, putImage } from './lib/db'
-import { editOutputs, getPersistedState, getTaskApiProfile, markInterruptedOpenAIRunningTasks, reuseConfig, submitTask, useStore } from './store'
+import { editOutputs, getPersistedState, getTaskApiProfile, markInterruptedOpenAIRunningTasks, mergePersistedState, reuseConfig, submitTask, useStore } from './store'
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
 const imageB = { id: 'image-b', dataUrl: 'data:image/png;base64,b' }
@@ -208,6 +208,60 @@ describe('input persistence setting', () => {
     expect(persisted.prompt).toBe('')
     expect(persisted.inputImages).toEqual([])
   })
+
+  it('does not persist API configuration in browser storage', () => {
+    const profile = createDefaultOpenAIProfile({
+      id: 'private-profile',
+      name: 'Private',
+      baseUrl: 'https://api.private.example/v1',
+      apiKey: 'private-key',
+      model: 'private-model',
+    })
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        apiKey: 'legacy-private-key',
+        profiles: [profile],
+        activeProfileId: profile.id,
+        clearInputAfterSubmit: true,
+      }),
+      dismissedCodexCliPrompts: ['https://api.private.example/v1\nprivate-key'],
+    })
+
+    const persisted = getPersistedState(useStore.getState())
+
+    expect(persisted.settings).toEqual({
+      clearInputAfterSubmit: true,
+      persistInputOnRestart: true,
+      reuseTaskApiProfileTemporarily: false,
+      alwaysShowRetryButton: false,
+      enterSubmit: false,
+    })
+    expect(JSON.stringify(persisted)).not.toContain('private-key')
+    expect(JSON.stringify(persisted)).not.toContain('api.private.example')
+    expect(JSON.stringify(persisted)).not.toContain('private-model')
+  })
+
+  it('ignores API configuration from legacy persisted browser storage', () => {
+    const currentState = useStore.getState()
+    const merged = mergePersistedState({
+      settings: {
+        baseUrl: 'https://persisted.example/v1',
+        apiKey: 'persisted-key',
+        model: 'persisted-model',
+        clearInputAfterSubmit: true,
+        persistInputOnRestart: false,
+      },
+      params: { n: 2 },
+    }, currentState)
+
+    expect(merged.settings.baseUrl).toBe(currentState.settings.baseUrl)
+    expect(merged.settings.apiKey).toBe(currentState.settings.apiKey)
+    expect(merged.settings.model).toBe(currentState.settings.model)
+    expect(merged.settings.clearInputAfterSubmit).toBe(true)
+    expect(merged.settings.persistInputOnRestart).toBe(false)
+    expect(merged.params.n).toBe(2)
+  })
 })
 
 describe('reused task API profile', () => {
@@ -321,7 +375,7 @@ describe('reused task API profile', () => {
     expect(state.tasks).toEqual([])
     expect(state.setConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
       title: '找不到 API 配置',
-      message: '找不到复用任务所使用的 API 配置「未知配置」，要使用当前的 API 配置「默认」提交任务吗？',
+      message: '找不到复用任务所使用的 API 配置「未知配置」，要使用当前的 API 配置「sub2api」提交任务吗？',
       confirmText: '使用当前配置提交',
       cancelText: '放弃提交',
     }))
