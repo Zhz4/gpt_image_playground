@@ -4,14 +4,14 @@ import { createDefaultFalProfile, DEFAULT_SETTINGS, normalizeSettings } from './
 import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
-  it('limits OpenAI output count to 10', () => {
+  it('limits OpenAI output count to 2', () => {
     const settings = normalizeSettings(DEFAULT_SETTINGS)
 
-    expect(getOutputImageLimitForSettings(settings)).toBe(10)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(10)
+    expect(getOutputImageLimitForSettings(settings)).toBe(2)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(2)
   })
 
-  it('limits fal.ai output count to 4', () => {
+  it('limits fal.ai output count to 2', () => {
     const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
@@ -19,8 +19,8 @@ describe('parameter compatibility', () => {
       activeProfileId: falProfile.id,
     })
 
-    expect(getOutputImageLimitForSettings(settings)).toBe(4)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8 }, settings).n).toBe(4)
+    expect(getOutputImageLimitForSettings(settings)).toBe(2)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8 }, settings).n).toBe(2)
   })
 
   it('only replaces fal.ai auto size in text-to-image mode', () => {

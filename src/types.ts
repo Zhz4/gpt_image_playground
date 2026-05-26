@@ -124,7 +124,7 @@ export interface MaskDraft {
 
 // ===== 任务记录 =====
 
-export type TaskStatus = 'running' | 'done' | 'error'
+export type TaskStatus = 'queued' | 'running' | 'done' | 'error'
 
 export interface TaskRecord {
   id: string

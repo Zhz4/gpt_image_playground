@@ -192,6 +192,7 @@ export default function DetailModal() {
   const taskProfileName = task.apiProfileName || '未知'
   const taskModel = task.apiModel || '未知'
   const showSourceInfo = Boolean(task.apiProvider || task.apiProfileName || task.apiModel)
+  const isQueued = task.status === 'queued'
   const isFalReconnecting = task.status === 'error' && task.falRecoverable
   const isCustomReconnecting = task.status === 'error' && task.customRecoverable
   const rawImageUrls = task.rawImageUrls ?? []
@@ -400,13 +401,13 @@ export default function DetailModal() {
               )}
             </>
           )}
-          {(task.status === 'running' || isFalReconnecting) && (
+          {(task.status === 'running' || isFalReconnecting || isQueued) && (
             <>
               <div className="absolute left-4 top-4 flex items-center gap-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded backdrop-blur-sm font-mono">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                {formatDuration()}
+                {isQueued ? '00:00' : formatDuration()}
               </div>
               {task.status === 'running' && (
                 <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -415,6 +416,14 @@ export default function DetailModal() {
                 </svg>
               )}
             </>
+          )}
+          {isQueued && !task.outputImages.length && (
+            <div className="w-full max-w-md px-4 text-center">
+              <svg className="w-10 h-10 text-amber-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M4 12a8 8 0 1116 0 8 8 0 01-16 0z" />
+              </svg>
+              <p className="text-sm font-medium text-amber-500">排队中</p>
+            </div>
           )}
           {task.status === 'error' && isFalReconnecting && (
             <div className="w-full max-w-md px-4 text-center">

@@ -54,6 +54,8 @@ const MAX_THUMBNAIL_BACKFILL_CONCURRENT = 4
 const FAL_RECOVERY_POLL_MS = 10_000
 const CUSTOM_RECOVERY_POLL_MS = 10_000
 const SUPPORT_PROMPT_IMAGE_THRESHOLD = 50
+const MAX_CONCURRENT_RUNNING_TASKS = 2
+let queueSchedulerRunning = false
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -421,7 +423,7 @@ interface AppState {
   // 搜索和筛选
   searchQuery: string
   setSearchQuery: (q: string) => void
-  filterStatus: 'all' | 'running' | 'done' | 'error'
+  filterStatus: 'all' | 'queued' | 'running' | 'done' | 'error'
   setFilterStatus: (status: AppState['filterStatus']) => void
   filterFavorite: boolean
   setFilterFavorite: (f: boolean) => void
@@ -713,10 +715,60 @@ function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasI
   return Boolean(submitMapping.taskIdPath)
 }
 
+function isTaskRunningLike(task: TaskRecord) {
+  if (task.status === 'running') return true
+  return Boolean(task.falRecoverable || task.customRecoverable)
+}
+
+function getRunningTaskCount(tasks: TaskRecord[]) {
+  return tasks.reduce((count, task) => count + (isTaskRunningLike(task) ? 1 : 0), 0)
+}
+
+function canStartMoreTasks(tasks: TaskRecord[]) {
+  return getRunningTaskCount(tasks) < MAX_CONCURRENT_RUNNING_TASKS
+}
+
+function getNextQueuedTask(tasks: TaskRecord[]) {
+  return [...tasks]
+    .filter((task) => task.status === 'queued')
+    .sort((a, b) => a.createdAt - b.createdAt)[0] ?? null
+}
+
+function hasQueuedTasks(tasks: TaskRecord[]) {
+  return tasks.some((task) => task.status === 'queued')
+}
+
+async function startTask(taskId: string) {
+  const task = useStore.getState().tasks.find((item) => item.id === taskId)
+  if (!task || task.status !== 'queued') return
+  updateTaskInStore(taskId, {
+    status: 'running',
+    error: null,
+    finishedAt: null,
+    elapsed: null,
+  })
+  executeTask(taskId)
+}
+
+async function scheduleQueuedTasks() {
+  if (queueSchedulerRunning) return
+  queueSchedulerRunning = true
+  try {
+    if (!hasQueuedTasks(useStore.getState().tasks)) return
+    while (canStartMoreTasks(useStore.getState().tasks)) {
+      const nextTask = getNextQueuedTask(useStore.getState().tasks)
+      if (!nextTask) break
+      await startTask(nextTask.id)
+    }
+  } finally {
+    queueSchedulerRunning = false
+  }
+}
+
 export function markInterruptedOpenAIRunningTasks(tasks: TaskRecord[], now = Date.now()) {
   const interruptedTasks: TaskRecord[] = []
   const updatedTasks = tasks.map((task) => {
-    if (!isRunningOpenAITask(task) || task.customTaskId) return task
+    if (task.status !== 'running' || !isOpenAITask(task) || task.customTaskId) return task
 
     const updated: TaskRecord = {
       ...task,
@@ -1090,6 +1142,7 @@ export async function initStore() {
       scheduleCustomRecovery(task.id, 0)
     }
   }
+  void scheduleQueuedTasks()
 
   // 收集所有任务引用的图片 id
   const referencedIds = new Set<string>()
@@ -1231,7 +1284,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     maskTargetImageId,
     maskImageId,
     outputImages: [],
-    status: 'running',
+    status: canStartMoreTasks(useStore.getState().tasks) ? 'running' : 'queued',
     error: null,
     createdAt: Date.now(),
     finishedAt: null,
@@ -1248,8 +1301,11 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   }
   useStore.getState().setReusedTaskApiProfile(null)
 
-  // 异步调用 API
-  executeTask(taskId)
+  if (task.status === 'running') {
+    executeTask(taskId)
+  } else {
+    void scheduleQueuedTasks()
+  }
 }
 
 async function executeTask(taskId: string) {
@@ -1449,6 +1505,7 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
   maybeOpenSupportPrompt(tasks, updated, taskId)
   const task = updated.find((t) => t.id === taskId)
   if (task) putTask(task)
+  void scheduleQueuedTasks()
 }
 
 /** 重试失败的任务：创建新任务并执行 */
@@ -1469,7 +1526,7 @@ export async function retryTask(task: TaskRecord) {
     maskTargetImageId: task.maskTargetImageId ?? null,
     maskImageId: task.maskImageId ?? null,
     outputImages: [],
-    status: 'running',
+    status: canStartMoreTasks(useStore.getState().tasks) ? 'running' : 'queued',
     error: null,
     createdAt: Date.now(),
     finishedAt: null,
@@ -1480,7 +1537,11 @@ export async function retryTask(task: TaskRecord) {
   useStore.getState().setTasks([newTask, ...latestTasks])
   await putTask(newTask)
 
-  executeTask(taskId)
+  if (newTask.status === 'running') {
+    executeTask(taskId)
+  } else {
+    void scheduleQueuedTasks()
+  }
 }
 
 /** 复用配置 */
@@ -1613,6 +1674,7 @@ export async function removeMultipleTasks(taskIds: string[]) {
     useStore.getState().setSelectedTaskIds(newSelection)
   }
 
+  void scheduleQueuedTasks()
   showToast(`已删除 ${taskIds.length} 条记录`, 'success')
 }
 
@@ -1650,6 +1712,7 @@ export async function removeTask(task: TaskRecord) {
     }
   }
 
+  void scheduleQueuedTasks()
   showToast('记录已删除', 'success')
 }
 

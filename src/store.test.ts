@@ -50,11 +50,39 @@ vi.mock('./lib/db', () => {
     },
   }
 })
-import { clearImages, putImage } from './lib/db'
-import { editOutputs, getPersistedState, getTaskApiProfile, markInterruptedOpenAIRunningTasks, mergePersistedState, reuseConfig, submitTask, useStore } from './store'
+vi.mock('./lib/api', () => ({
+  callImageApi: vi.fn(),
+}))
+import { callImageApi } from './lib/api'
+import { clearImages, clearTasks, putImage, putTask } from './lib/db'
+import { editOutputs, getPersistedState, getTaskApiProfile, initStore, markInterruptedOpenAIRunningTasks, mergePersistedState, retryTask, reuseConfig, submitTask, useStore } from './store'
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
 const imageB = { id: 'image-b', dataUrl: 'data:image/png;base64,b' }
+const mockedCallImageApi = vi.mocked(callImageApi)
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+async function flushAsyncWork() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+async function waitForCallCount(expected: number) {
+  for (let i = 0; i < 20; i++) {
+    if (mockedCallImageApi.mock.calls.length >= expected) return
+    await flushAsyncWork()
+  }
+  expect(mockedCallImageApi).toHaveBeenCalledTimes(expected)
+}
 
 function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
@@ -141,6 +169,118 @@ describe('mask draft lifecycle in store actions', () => {
     const state = useStore.getState()
     expect(state.inputImages.map((img) => img.id)).toEqual([replacement.id, imageB.id])
     expect(state.prompt).toBe(prompt)
+  })
+})
+
+describe('task queue scheduling', () => {
+  beforeEach(async () => {
+    mockedCallImageApi.mockReset()
+    await clearTasks()
+    await clearImages()
+    useStore.setState({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key' },
+      prompt: '',
+      inputImages: [],
+      maskDraft: null,
+      maskEditorImageId: null,
+      params: { ...DEFAULT_PARAMS },
+      tasks: [],
+      searchQuery: '',
+      filterStatus: 'all',
+      filterFavorite: false,
+      selectedTaskIds: [],
+      detailTaskId: null,
+      lightboxImageId: null,
+      lightboxImageList: [],
+      showSettings: false,
+      toast: null,
+      confirmDialog: null,
+      dismissedCodexCliPrompts: [],
+      reusedTaskApiProfileId: null,
+      reusedTaskApiProfileName: null,
+      reusedTaskApiProfileMissing: false,
+      showToast: vi.fn(),
+      setConfirmDialog: vi.fn(),
+    })
+  })
+
+  async function submitWithPrompt(label: string) {
+    useStore.getState().setPrompt(label)
+    await submitTask()
+  }
+
+  it('queues the third submitted task when two tasks are already running', async () => {
+    const first = createDeferred<{ images: string[] }>()
+    const second = createDeferred<{ images: string[] }>()
+    mockedCallImageApi
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    await submitWithPrompt('task-1')
+    await submitWithPrompt('task-2')
+    await submitWithPrompt('task-3')
+
+    const state = useStore.getState()
+    expect(mockedCallImageApi).toHaveBeenCalledTimes(2)
+    expect(state.tasks.find((item) => item.prompt === 'task-1')?.status).toBe('running')
+    expect(state.tasks.find((item) => item.prompt === 'task-2')?.status).toBe('running')
+    expect(state.tasks.find((item) => item.prompt === 'task-3')?.status).toBe('queued')
+  })
+
+  it('starts the next queued task after a running task finishes', async () => {
+    const first = createDeferred<{ images: string[] }>()
+    const second = createDeferred<{ images: string[] }>()
+    const third = createDeferred<{ images: string[] }>()
+    mockedCallImageApi
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+      .mockImplementationOnce(() => third.promise)
+
+    await submitWithPrompt('task-1')
+    await submitWithPrompt('task-2')
+    await submitWithPrompt('task-3')
+
+    first.resolve({ images: ['data:image/png;base64,first'] })
+    await waitForCallCount(3)
+
+    const state = useStore.getState()
+    expect(mockedCallImageApi).toHaveBeenCalledTimes(3)
+    expect(state.tasks.find((item) => item.prompt === 'task-1')?.status).toBe('done')
+    expect(state.tasks.find((item) => item.prompt === 'task-3')?.status).toBe('running')
+  })
+
+  it('queues retries when two tasks are already running', async () => {
+    const first = createDeferred<{ images: string[] }>()
+    const second = createDeferred<{ images: string[] }>()
+    mockedCallImageApi
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    await submitWithPrompt('task-1')
+    await submitWithPrompt('task-2')
+
+    await retryTask(task({ id: 'failed-task', status: 'error', prompt: 'retry-me', createdAt: 100 }))
+
+    const retryTaskRecord = useStore.getState().tasks.find((item) => item.prompt === 'retry-me')
+    expect(retryTaskRecord?.status).toBe('queued')
+  })
+
+  it('keeps queued tasks queued through initialization when running work already fills the limit', async () => {
+    await clearTasks()
+    await clearImages()
+    await putImage(imageA)
+    await putTask(task({ id: 'queued-task', status: 'queued', apiProvider: 'openai', createdAt: 1_000, finishedAt: null, elapsed: null }))
+    await putTask(task({ id: 'openai-running', apiProvider: 'openai', status: 'running', createdAt: 2_000, finishedAt: null, elapsed: null }))
+    await putTask(task({ id: 'fal-running', apiProvider: 'fal', status: 'running', createdAt: 3_000, finishedAt: null, elapsed: null }))
+    await putTask(task({ id: 'custom-running', apiProvider: 'custom-provider', customTaskId: 'task-1', status: 'running', createdAt: 4_000, finishedAt: null, elapsed: null }))
+
+    await initStore()
+
+    const state = useStore.getState()
+    expect(state.tasks.find((item) => item.id === 'queued-task')?.status).toBe('queued')
+    expect(state.tasks.find((item) => item.id === 'openai-running')?.status).toBe('error')
+    expect(state.tasks.find((item) => item.id === 'fal-running')?.status).toBe('running')
+    expect(state.tasks.find((item) => item.id === 'custom-running')?.status).toBe('running')
   })
 })
 
@@ -307,7 +447,7 @@ describe('reused task API profile', () => {
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBe(falProfile.id)
-    expect(state.params).toMatchObject({ n: 4, size: '1360x1024', quality: 'high' })
+    expect(state.params).toMatchObject({ n: 2, size: '1360x1024', quality: 'high' })
     expect(state.showToast).toHaveBeenCalledWith('已临时复用该任务的 API 配置「fal 配置」', 'success')
   })
 
@@ -365,7 +505,7 @@ describe('reused task API profile', () => {
     const state = useStore.getState()
     expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
-    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
+    expect(state.params).toMatchObject({ n: 2, size: 'auto', quality: 'auto' })
   })
 
   it('asks whether to submit with current API profile when the reused API profile is missing', async () => {
